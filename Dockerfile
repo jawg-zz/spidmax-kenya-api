@@ -14,6 +14,7 @@ COPY package*.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 COPY --from=build /app/dist ./dist
 COPY public ./public
+RUN for f in public/*.apk; do [ -s "$f" ] || { echo "missing APK: $f"; exit 1; }; done && ls -l public/*.apk
 RUN mkdir -p /app/data
 EXPOSE 3211
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s \
