@@ -1,0 +1,66 @@
+[
+  {
+    "id": "kra-eseal-multivendor-2026",
+    "title": "KRA electronic cargo seals cease operation",
+    "detail": "KRA stops operating its own RECTS electronic seals from 26 October 2026 as the multi-vendor, user-owned e-Seal framework takes over. Cargo under customs control must use seals from approved vendors.",
+    "due": "2026-10-26",
+    "url": "https://www.kra.go.ke/news-center/public-notices/2401-notification-of-the-full-roll-out-of-the-electronic-monitoring-and-tracking-of-goods-under-customs-control-and-transition-to-the-multi-vendor-user-owned-e-seal-framework",
+    "verified": "2026-10-24"
+  },
+  {
+    "id": "id-waiver-2026",
+    "title": "ID replacement fee waiver ends",
+    "detail": "Replacing a lost national ID is free until 30 October 2026.",
+    "due": "2026-10-30",
+    "url": "https://www.ecitizen.go.ke",
+    "verified": "2026-10-24"
+  },
+  {
+    "id": "kra-customs-licence-renewal-2027",
+    "title": "Customs agent licence renewal due",
+    "detail": "Licensed customs agents must submit 2027 licence renewal applications on or before 31 October 2026.",
+    "due": "2026-10-31",
+    "url": "https://www.kra.go.ke/news-center/public-notices/2398-application-for-renewal-of-customs-agents-licences-2027",
+    "verified": "2026-10-24"
+  },
+  {
+    "id": "kra-bonded-warehouse-renewal-2026",
+    "title": "Bonded warehouse licence renewal",
+    "detail": "Bonded warehouse, MUB and transit godown licences expire 31 Dec 2026. Renew on Customs iCMS on or before 31 Oct 2026.",
+    "due": "2026-10-31",
+    "url": "https://www.kra.go.ke/news-center/public-notices/2397-renewal-of-licences-for-bonded-warehouses,-manufacture-under-bond-mub-and-transit-godowns-2",
+    "verified": "2026-10-24"
+  },
+  {
+    "id": "kra-transit-shed-renewal-2026",
+    "title": "Transit shed licence renewal",
+    "detail": "Transit shed licences expire 31 Dec 2026. Applications go through Customs iCMS on or before 31 Oct 2026.",
+    "due": "2026-10-31",
+    "url": "https://www.kra.go.ke/news-center/public-notices/2396-renewal-of-licences-for-transit-sheds-2",
+    "verified": "2026-10-24"
+  },
+  {
+    "id": "kra-marine-cargo-insurance-2026",
+    "title": "Marine cargo insurance mandatory",
+    "detail": "KRA with the Insurance Regulatory Authority enforces mandatory Digital Marine Cargo Insurance from 1 Nov 2026.",
+    "due": "2026-11-01",
+    "url": "https://www.kra.go.ke/news-center/public-notices/2402-enforcement-of-marine-cargo-insurance",
+    "verified": "2026-10-24"
+  },
+  {
+    "id": "kra-tax-amnesty-2026",
+    "title": "KRA tax amnesty closes",
+    "detail": "Penalties, interest and fines on tax debts accrued up to 31 December 2025 are waived if the principal tax is cleared by 31 December 2026.",
+    "due": "2026-12-31",
+    "url": "https://www.kra.go.ke/popular-links/2026-tax-amnesty-programme-apply-now",
+    "verified": "2026-10-24"
+  },
+  {
+    "id": "kra-return-2027",
+    "title": "KRA annual return due",
+    "detail": "File your individual return on iTax by 30 June.",
+    "due": "2027-06-30",
+    "url": "https://itax.kra.go.ke",
+    "verified": "2026-10-24"
+  }
+]
