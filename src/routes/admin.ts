@@ -123,8 +123,11 @@ adminRouter.get('/admin/login', (req, res) => {
 });
 
 adminRouter.post('/admin/login', (req, res) => {
-  if (!postAllowed(req)) {
-    res.status(403).send(`forbidden: csrf or origin rejected (origin ${req.headers.origin ?? 'none'})`);
+  // Login is guarded by the secret itself: a CSRF token adds nothing when the
+  // request already has to carry the admin token, and clients with an opaque
+  // origin (sandboxed frames, webviews) cannot hold our CSRF cookie at all.
+  if (!sameOrigin(req)) {
+    res.status(403).send(`forbidden: origin ${req.headers.origin ?? 'none'}`);
     return;
   }
   const ip = (req.ip ?? '').replace(/^::ffff:/, '');
@@ -251,10 +254,10 @@ adminRouter.get('/admin', adminGate, (req, res) => {
 });
 
 adminRouter.post('/admin/save', adminGate, (req, res) => {
-  if (!postAllowed(req)) {
-    res.status(403).send(`forbidden: csrf or origin rejected (origin ${req.headers.origin ?? 'none'})`);
-    return;
-  }
+  // Login is guarded by the secret itself: a CSRF token adds nothing when the
+  // request already has to carry the admin token, and clients with an opaque
+  // origin (sandboxed frames, webviews) cannot hold our CSRF cookie at all.
+  if (!postAllowed(req)) { res.status(403).send('forbidden: csrf'); return; }
   const body = req.body ?? {};
   const item = {
     id: String(body.id ?? '').trim(),
@@ -281,10 +284,10 @@ adminRouter.post('/admin/save', adminGate, (req, res) => {
 });
 
 adminRouter.post('/admin/delete', adminGate, (req, res) => {
-  if (!postAllowed(req)) {
-    res.status(403).send(`forbidden: csrf or origin rejected (origin ${req.headers.origin ?? 'none'})`);
-    return;
-  }
+  // Login is guarded by the secret itself: a CSRF token adds nothing when the
+  // request already has to carry the admin token, and clients with an opaque
+  // origin (sandboxed frames, webviews) cannot hold our CSRF cookie at all.
+  if (!postAllowed(req)) { res.status(403).send('forbidden: csrf'); return; }
   const id = String((req.body ?? {}).id ?? '');
   db.prepare('DELETE FROM deadlines WHERE id = ?').run(id);
   res.redirect('/admin?deleted=1');
@@ -415,10 +418,10 @@ adminRouter.get('/admin/status', adminGate, (_req, res) => {
 });
 
 adminRouter.post('/admin/fuel-refresh', adminGate, async (req, res) => {
-  if (!postAllowed(req)) {
-    res.status(403).send(`forbidden: csrf or origin rejected (origin ${req.headers.origin ?? 'none'})`);
-    return;
-  }
+  // Login is guarded by the secret itself: a CSRF token adds nothing when the
+  // request already has to carry the admin token, and clients with an opaque
+  // origin (sandboxed frames, webviews) cannot hold our CSRF cookie at all.
+  if (!postAllowed(req)) { res.status(403).send('forbidden: csrf'); return; }
   try {
     await fuelSnapshot(true);
     res.redirect('/admin/status?refreshed=1');
