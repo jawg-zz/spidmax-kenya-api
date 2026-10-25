@@ -62,12 +62,42 @@ export function adminGate(req: Request, res: Response, next: NextFunction) {
 
 /** Reject cross-site form posts: the session cookie is SameSite=Strict, and we
  *  also require the Origin to match the host. */
+const hostOnly = (v: string) => v.split(',')[0].trim().toLowerCase().replace(/:\d+$/, '');
+
+const rejects: { at: number; origin: string; host: string; fwd: string }[] = [];
+
+export function noteReject(req: Request): void {
+  rejects.push({
+    at: Date.now(),
+    origin: String(req.headers.origin ?? ''),
+    host: String(req.headers.host ?? ''),
+    fwd: String(req.headers['x-forwarded-host'] ?? ''),
+  });
+  if (rejects.length > 10) rejects.shift();
+}
+
+export function recentRejects() {
+  return rejects.slice().reverse();
+}
+
+/** Reject cross-site form posts. Because this sits behind a proxy, the browser's
+ *  Origin and the Host header it lands on are not always byte-identical (ports,
+ *  forwarded host), so compare hostnames and accept the forwarded host too. */
 export function sameOrigin(req: Request): boolean {
   const origin = req.headers.origin;
   if (!origin) return true; // curl / scripts
+  let originHost: string;
   try {
-    return new URL(origin).host === req.headers.host;
+    originHost = new URL(origin).host.toLowerCase().replace(/:\d+$/, '');
   } catch {
+    noteReject(req);
     return false;
   }
+  const candidates = new Set<string>();
+  for (const v of [req.headers.host, req.headers['x-forwarded-host'], process.env.PUBLIC_HOST]) {
+    if (typeof v === 'string' && v) candidates.add(hostOnly(v));
+  }
+  if (candidates.has(originHost)) return true;
+  noteReject(req);
+  return false;
 }

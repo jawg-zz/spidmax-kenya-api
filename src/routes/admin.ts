@@ -4,7 +4,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { db } from '../db';
 import { validateDeadline } from '../validate';
-import { adminGate, endSession, hasSession, sameOrigin, startSession, tokenMatches, adminToken } from '../adminauth';
+import { adminGate, endSession, hasSession, sameOrigin, startSession, tokenMatches, adminToken, recentRejects } from '../adminauth';
 import { fuelMemoState, fuelSnapshot, fuelCacheFile } from './fuel';
 
 export const adminRouter = Router();
@@ -119,7 +119,10 @@ adminRouter.get('/admin/login', (req, res) => {
 });
 
 adminRouter.post('/admin/login', (req, res) => {
-  if (!sameOrigin(req)) { res.status(403).send('forbidden'); return; }
+  if (!sameOrigin(req)) {
+    res.status(403).send(`forbidden: origin ${req.headers.origin ?? 'none'} host ${req.headers.host ?? 'none'} forwarded ${req.headers['x-forwarded-host'] ?? 'none'}`);
+    return;
+  }
   const ip = (req.ip ?? '').replace(/^::ffff:/, '');
   if (tooMany(ip)) { res.status(429).send('too many attempts, try again later'); return; }
   const token = String((req.body ?? {}).token ?? '').trim();
@@ -240,7 +243,10 @@ adminRouter.get('/admin', adminGate, (req, res) => {
 });
 
 adminRouter.post('/admin/save', adminGate, (req, res) => {
-  if (!sameOrigin(req)) { res.status(403).send('forbidden'); return; }
+  if (!sameOrigin(req)) {
+    res.status(403).send(`forbidden: origin ${req.headers.origin ?? 'none'} host ${req.headers.host ?? 'none'} forwarded ${req.headers['x-forwarded-host'] ?? 'none'}`);
+    return;
+  }
   const body = req.body ?? {};
   const item = {
     id: String(body.id ?? '').trim(),
@@ -267,7 +273,10 @@ adminRouter.post('/admin/save', adminGate, (req, res) => {
 });
 
 adminRouter.post('/admin/delete', adminGate, (req, res) => {
-  if (!sameOrigin(req)) { res.status(403).send('forbidden'); return; }
+  if (!sameOrigin(req)) {
+    res.status(403).send(`forbidden: origin ${req.headers.origin ?? 'none'} host ${req.headers.host ?? 'none'} forwarded ${req.headers['x-forwarded-host'] ?? 'none'}`);
+    return;
+  }
   const id = String((req.body ?? {}).id ?? '');
   db.prepare('DELETE FROM deadlines WHERE id = ?').run(id);
   res.redirect('/admin?deleted=1');
@@ -367,7 +376,8 @@ adminRouter.get('/admin/status', adminGate, (_req, res) => {
 
     <div class="card">
       <h2>Released APKs (${list.length})</h2>
-      ${list.length ? `<table><thead><tr><th>File</th><th>Size</th><th>sha256</th><th>Built</th></tr></thead><tbody>
+      ${list.length ? `
+      <table><thead><tr><th>File</th><th>Size</th><th>sha256</th><th>Built</th></tr></thead><tbody>
         ${list.map((a) => `<tr>
           <td><a href="/${encodeURIComponent(a.name)}" target="_blank" rel="noreferrer noopener">${esc(a.name)}</a></td>
           <td style="white-space:nowrap">${mb(a.size)}</td>
@@ -378,11 +388,27 @@ adminRouter.get('/admin/status', adminGate, (_req, res) => {
       <p class="sub" style="margin:12px 0 0">Stable alias: ${aliasNote}</p>`
       : '<p class="sub">No APKs in public/.</p>'}
     </div>
+
+    ${recentRejects().length ? `
+    <div class="card">
+      <h2>Rejected form posts (${recentRejects().length})</h2>
+      <table><thead><tr><th>When</th><th>Origin sent</th><th>Host seen</th></tr></thead><tbody>
+      ${recentRejects().map((r) => `<tr>
+        <td class="sub">${esc(new Date(r.at).toISOString().slice(11, 19))}Z</td>
+        <td><code style="font-size:11px">${esc(r.origin || '(none)')}</code></td>
+        <td><code style="font-size:11px">${esc(r.host)}</code></td>
+      </tr>`).join('')}
+      </tbody></table>
+      <p class="sub" style="margin:12px 0 0">A burst here is either a misconfigured proxy or someone probing the login.</p>
+    </div>` : ''}
   `, { refresh: true }));
 });
 
 adminRouter.post('/admin/fuel-refresh', adminGate, async (req, res) => {
-  if (!sameOrigin(req)) { res.status(403).send('forbidden'); return; }
+  if (!sameOrigin(req)) {
+    res.status(403).send(`forbidden: origin ${req.headers.origin ?? 'none'} host ${req.headers.host ?? 'none'} forwarded ${req.headers['x-forwarded-host'] ?? 'none'}`);
+    return;
+  }
   try {
     await fuelSnapshot(true);
     res.redirect('/admin/status?refreshed=1');
