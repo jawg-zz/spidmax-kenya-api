@@ -78,3 +78,18 @@ fuelRouter.get('/', async (req, res) => {
     res.status(502).json({ ok: false, error: 'fuel prices unavailable', detail: String(err) });
   }
 });
+
+/** Admin surface: force a scrape that bypasses the 6h memo. */
+export async function fuelSnapshot(force = false): Promise<Snapshot> {
+  if (force) memo = null;
+  return load();
+}
+
+/** Admin surface: what is in memory right now, without touching the network. */
+export function fuelMemoState(): { at: number | null; data: Snapshot | null } {
+  return { at: memo?.at ?? null, data: memo?.data ?? null };
+}
+
+export function fuelCacheFile(): string {
+  return CACHE_FILE;
+}

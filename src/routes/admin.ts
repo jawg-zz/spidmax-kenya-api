@@ -1,7 +1,11 @@
 import { Router } from 'express';
+import fs from 'node:fs';
+import path from 'node:path';
+import crypto from 'node:crypto';
 import { db } from '../db';
 import { validateDeadline } from '../validate';
 import { adminGate, endSession, hasSession, sameOrigin, startSession, tokenMatches, adminToken } from '../adminauth';
+import { fuelMemoState, fuelSnapshot, fuelCacheFile } from './fuel';
 
 export const adminRouter = Router();
 
@@ -84,6 +88,8 @@ const page = (title: string, body: string, opts: { refresh?: boolean } = {}) => 
 </style></head><body>
 <header>
   <h1>Spidmax Kenya · admin</h1><div class="sp"></div>
+  <a href="/admin">deadlines</a>
+  <a href="/admin/status">status</a>
   <a href="/v1/deadlines" target="_blank">feed JSON</a>
   <a href="/health" target="_blank">health</a>
   ${opts.refresh ? '<button onclick="location.reload()">refresh</button>' : ''}
@@ -265,4 +271,122 @@ adminRouter.post('/admin/delete', adminGate, (req, res) => {
   const id = String((req.body ?? {}).id ?? '');
   db.prepare('DELETE FROM deadlines WHERE id = ?').run(id);
   res.redirect('/admin?deleted=1');
+});
+
+// ---- status --------------------------------------------------------------
+
+const PUBLIC_DIR = path.join(__dirname, '..', '..', 'public');
+
+type Apk = { name: string; size: number; sha: string; mtime: string };
+const hashCache = new Map<string, { mtimeMs: number; size: number; sha: string }>();
+
+function apks(): Apk[] {
+  let names: string[] = [];
+  try { names = fs.readdirSync(PUBLIC_DIR).filter((f) => f.endsWith('.apk')); } catch { return []; }
+  return names.sort().map((name) => {
+    const file = path.join(PUBLIC_DIR, name);
+    const st = fs.statSync(file);
+    let hit = hashCache.get(file);
+    if (!hit || hit.mtimeMs !== st.mtimeMs) {
+      hit = {
+        mtimeMs: st.mtimeMs,
+        size: st.size,
+        sha: crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex'),
+      };
+      hashCache.set(file, hit);
+    }
+    return { name, size: hit.size, sha: hit.sha, mtime: st.mtime.toISOString() };
+  });
+}
+
+function fuelState(): { snap: any | null; source: string; at: number | null } {
+  const memo = fuelMemoState();
+  if (memo.data) return { snap: memo.data, source: 'live fetch', at: memo.at };
+  try {
+    const cached = JSON.parse(fs.readFileSync(fuelCacheFile(), 'utf8'));
+    return { snap: cached, source: 'cache file', at: fs.statSync(fuelCacheFile()).mtimeMs };
+  } catch { return { snap: null, source: 'none', at: null }; }
+}
+
+function ageLabel(at: number | null): string {
+  if (!at) return '--';
+  const m = Math.round((Date.now() - at) / 60000);
+  if (m < 1) return 'just now';
+  if (m < 60) return m + ' min ago';
+  const h = Math.round(m / 60);
+  if (h < 24) return h + ' h ago';
+  return Math.round(h / 24) + ' d ago';
+}
+
+const mb = (n: number) => (n / 1024 / 1024).toFixed(2) + ' MB';
+
+adminRouter.get('/admin/status', adminGate, (_req, res) => {
+  const counted = db.prepare('SELECT COUNT(*) AS n FROM deadlines').get() as unknown as { n: number };
+  const fuel = fuelState();
+  const list = apks();
+  const stable = list.find((a) => a.name === 'spidmax-kenya.apk');
+  const versioned = list
+    .filter((a) => /-\d+\.\d+\.\d+\.apk$/.test(a.name))
+    .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+  const newest = versioned[versioned.length - 1];
+  const aliasOk = Boolean(stable && newest && stable.sha === newest.sha);
+
+  const flash = _req.query.refreshed ? '<div class="note">Fuel refreshed from EPRA.</div>'
+    : _req.query.error ? `<div class="note err">${esc(String(_req.query.error))}</div>` : '';
+
+  const aliasNote = stable
+    ? (aliasOk ? '<span class="pill muted">matches newest</span>'
+               : '<span class="pill danger">differs from newest</span>')
+    : '<span class="pill danger">missing</span>';
+
+  res.send(page('Status', `
+    ${flash}
+    <div class="card">
+      <h2>Service</h2>
+      <div class="stats">
+        <div class="stat"><b>${esc(process.env.APP_VERSION ?? '1.3.0')}</b><span>version</span></div>
+        <div class="stat"><b>${Math.round(process.uptime() / 60)}</b><span>minutes up</span></div>
+        <div class="stat"><b>${counted.n}</b><span>deadlines</span></div>
+        <div class="stat"><b>${esc(process.version)}</b><span>node</span></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Fuel prices</h2>
+      ${fuel.snap ? `
+      <div class="stats" style="margin-bottom:14px">
+        <div class="stat"><b>${esc(fuel.snap.cycle.from)} &rarr; ${esc(fuel.snap.cycle.to)}</b><span>cycle</span></div>
+        <div class="stat"><b>${fuel.snap.prices.length}</b><span>towns</span></div>
+        <div class="stat"><b>${esc(ageLabel(fuel.at))}</b><span>${esc(fuel.source)}</span></div>
+      </div>` : '<p class="sub">No fuel data in memory or on disk yet.</p>'}
+      <form method="post" action="/admin/fuel-refresh" style="margin:0">
+        <button class="primary" type="submit">Refresh from EPRA now</button>
+      </form>
+      <p class="sub" style="margin:12px 0 0">Refreshed automatically at most every 6 hours; falls back to the cached file when EPRA is unreachable.</p>
+    </div>
+
+    <div class="card">
+      <h2>Released APKs (${list.length})</h2>
+      ${list.length ? `<table><thead><tr><th>File</th><th>Size</th><th>sha256</th><th>Built</th></tr></thead><tbody>
+        ${list.map((a) => `<tr>
+          <td><a href="/${encodeURIComponent(a.name)}" target="_blank" rel="noreferrer noopener">${esc(a.name)}</a></td>
+          <td style="white-space:nowrap">${mb(a.size)}</td>
+          <td><code style="font-size:11px">${esc(a.sha.slice(0, 16))}...</code></td>
+          <td style="white-space:nowrap" class="sub">${esc(a.mtime.slice(0, 10))}</td>
+        </tr>`).join('')}
+      </tbody></table>
+      <p class="sub" style="margin:12px 0 0">Stable alias: ${aliasNote}</p>`
+      : '<p class="sub">No APKs in public/.</p>'}
+    </div>
+  `, { refresh: true }));
+});
+
+adminRouter.post('/admin/fuel-refresh', adminGate, async (req, res) => {
+  if (!sameOrigin(req)) { res.status(403).send('forbidden'); return; }
+  try {
+    await fuelSnapshot(true);
+    res.redirect('/admin/status?refreshed=1');
+  } catch (err) {
+    res.redirect('/admin/status?error=' + encodeURIComponent(String(err)));
+  }
 });
