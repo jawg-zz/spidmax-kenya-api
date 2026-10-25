@@ -4,7 +4,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { db } from '../db';
 import { validateDeadline } from '../validate';
-import { adminGate, endSession, hasSession, sameOrigin, startSession, tokenMatches, adminToken, recentRejects } from '../adminauth';
+import { adminGate, endSession, hasSession, sameOrigin, startSession, tokenMatches, adminToken, recentRejects, csrfFor, postAllowed } from '../adminauth';
 import { fuelMemoState, fuelSnapshot, fuelCacheFile } from './fuel';
 
 export const adminRouter = Router();
@@ -45,7 +45,7 @@ const badge = (days: number | null) => {
   return `<span class="pill ${cls}">${label}</span>`;
 };
 
-const page = (title: string, body: string, opts: { refresh?: boolean } = {}) => `<!doctype html>
+const page = (title: string, body: string, opts: { refresh?: boolean; csrf?: string } = {}) => `<!doctype html>
 <html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="robots" content="noindex,nofollow">
@@ -93,7 +93,9 @@ const page = (title: string, body: string, opts: { refresh?: boolean } = {}) => 
   <a href="/v1/deadlines" target="_blank">feed JSON</a>
   <a href="/health" target="_blank">health</a>
   ${opts.refresh ? '<button onclick="location.reload()">refresh</button>' : ''}
-  <form method="post" action="/admin/logout" style="margin:0"><button>sign out</button></form>
+  <form method="post" action="/admin/logout" style="margin:0">
+    <input type="hidden" name="csrf" value="${opts.csrf ?? ''}"><button>sign out</button>
+  </form>
 </header>
 <main>${body}</main><script src="/admin.js" defer></script></body></html>`;
 
@@ -101,6 +103,7 @@ const page = (title: string, body: string, opts: { refresh?: boolean } = {}) => 
 
 adminRouter.get('/admin/login', (req, res) => {
   if (hasSession(req)) { res.redirect('/admin'); return; }
+  const csrf = csrfFor(req, res);
   if (!adminToken()) {
     res.status(503).send(page('Not configured', '<div class="card">ADMIN_TOKEN is not set on the server.</div>'));
     return;
@@ -111,6 +114,7 @@ adminRouter.get('/admin/login', (req, res) => {
       <h2>Admin sign in</h2>
       ${err}
       <form method="post" action="/admin/login">
+        <input type="hidden" name="csrf" value="${csrf}">
         <label>Admin token<input type="password" name="token" autofocus required></label>
         <button class="primary" type="submit">Sign in</button>
       </form>
@@ -119,8 +123,8 @@ adminRouter.get('/admin/login', (req, res) => {
 });
 
 adminRouter.post('/admin/login', (req, res) => {
-  if (!sameOrigin(req)) {
-    res.status(403).send(`forbidden: origin ${req.headers.origin ?? 'none'} host ${req.headers.host ?? 'none'} forwarded ${req.headers['x-forwarded-host'] ?? 'none'}`);
+  if (!postAllowed(req)) {
+    res.status(403).send(`forbidden: csrf or origin rejected (origin ${req.headers.origin ?? 'none'})`);
     return;
   }
   const ip = (req.ip ?? '').replace(/^::ffff:/, '');
@@ -133,6 +137,7 @@ adminRouter.post('/admin/login', (req, res) => {
 });
 
 adminRouter.post('/admin/logout', (req, res) => {
+  if (!postAllowed(req)) { res.status(403).send('forbidden: csrf'); return; }
   endSession(req, res);
   res.redirect('/admin/login');
 });
@@ -160,6 +165,7 @@ document.querySelectorAll('form.del').forEach(function (f) {
 // ---- dashboard -----------------------------------------------------------
 
 adminRouter.get('/admin', adminGate, (req, res) => {
+  const csrf = csrfFor(req, res);
   const rows = db.prepare(
     'SELECT id, title, detail, due, url, source, verified FROM deadlines ORDER BY due ASC'
   ).all() as unknown as Row[];
@@ -188,6 +194,7 @@ adminRouter.get('/admin', adminGate, (req, res) => {
         <a href="/admin?edit=${encodeURIComponent(r.id)}">edit</a>
         <form method="post" action="/admin/delete" class="del" data-title="${esc(r.title)}"
               style="display:inline;margin-left:10px">
+          <input type="hidden" name="csrf" value="${csrf}">
           <input type="hidden" name="id" value="${esc(r.id)}">
           <button class="danger-text">delete</button>
         </form>
@@ -208,6 +215,7 @@ adminRouter.get('/admin', adminGate, (req, res) => {
     <div class="card">
       <h2>${f ? 'Edit deadline' : 'Add deadline'}</h2>
       <form method="post" action="/admin/save">
+        <input type="hidden" name="csrf" value="${csrf}">
         <div class="row">
           <label>ID (lowercase slug)
             <input name="id" value="${esc(f?.id ?? '')}" ${f ? 'readonly' : ''} required pattern="[a-z0-9-]{3,60}">
@@ -239,12 +247,12 @@ adminRouter.get('/admin', adminGate, (req, res) => {
       ${rows.length ? `<table><thead><tr><th>Deadline</th><th>Due</th><th>Source</th><th></th></tr></thead><tbody>${tableRows}</tbody></table>`
         : '<p class="sub">Nothing published yet.</p>'}
     </div>
-  `, { refresh: true }));
+  `, { refresh: true, csrf }));
 });
 
 adminRouter.post('/admin/save', adminGate, (req, res) => {
-  if (!sameOrigin(req)) {
-    res.status(403).send(`forbidden: origin ${req.headers.origin ?? 'none'} host ${req.headers.host ?? 'none'} forwarded ${req.headers['x-forwarded-host'] ?? 'none'}`);
+  if (!postAllowed(req)) {
+    res.status(403).send(`forbidden: csrf or origin rejected (origin ${req.headers.origin ?? 'none'})`);
     return;
   }
   const body = req.body ?? {};
@@ -273,8 +281,8 @@ adminRouter.post('/admin/save', adminGate, (req, res) => {
 });
 
 adminRouter.post('/admin/delete', adminGate, (req, res) => {
-  if (!sameOrigin(req)) {
-    res.status(403).send(`forbidden: origin ${req.headers.origin ?? 'none'} host ${req.headers.host ?? 'none'} forwarded ${req.headers['x-forwarded-host'] ?? 'none'}`);
+  if (!postAllowed(req)) {
+    res.status(403).send(`forbidden: csrf or origin rejected (origin ${req.headers.origin ?? 'none'})`);
     return;
   }
   const id = String((req.body ?? {}).id ?? '');
@@ -330,6 +338,7 @@ function ageLabel(at: number | null): string {
 const mb = (n: number) => (n / 1024 / 1024).toFixed(2) + ' MB';
 
 adminRouter.get('/admin/status', adminGate, (_req, res) => {
+  const csrf = csrfFor(_req, res);
   const counted = db.prepare('SELECT COUNT(*) AS n FROM deadlines').get() as unknown as { n: number };
   const fuel = fuelState();
   const list = apks();
@@ -369,6 +378,7 @@ adminRouter.get('/admin/status', adminGate, (_req, res) => {
         <div class="stat"><b>${esc(ageLabel(fuel.at))}</b><span>${esc(fuel.source)}</span></div>
       </div>` : '<p class="sub">No fuel data in memory or on disk yet.</p>'}
       <form method="post" action="/admin/fuel-refresh" style="margin:0">
+        <input type="hidden" name="csrf" value="${csrf}">
         <button class="primary" type="submit">Refresh from EPRA now</button>
       </form>
       <p class="sub" style="margin:12px 0 0">Refreshed automatically at most every 6 hours; falls back to the cached file when EPRA is unreachable.</p>
@@ -401,12 +411,12 @@ adminRouter.get('/admin/status', adminGate, (_req, res) => {
       </tbody></table>
       <p class="sub" style="margin:12px 0 0">A burst here is either a misconfigured proxy or someone probing the login.</p>
     </div>` : ''}
-  `, { refresh: true }));
+  `, { refresh: true, csrf }));
 });
 
 adminRouter.post('/admin/fuel-refresh', adminGate, async (req, res) => {
-  if (!sameOrigin(req)) {
-    res.status(403).send(`forbidden: origin ${req.headers.origin ?? 'none'} host ${req.headers.host ?? 'none'} forwarded ${req.headers['x-forwarded-host'] ?? 'none'}`);
+  if (!postAllowed(req)) {
+    res.status(403).send(`forbidden: csrf or origin rejected (origin ${req.headers.origin ?? 'none'})`);
     return;
   }
   try {
